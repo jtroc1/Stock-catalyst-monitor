@@ -205,7 +205,7 @@ def main():
         cal_universe = list(dict.fromkeys(stocks + crypto + DEFAULT_STOCK_UNIVERSE[:25]))
         if st.button("Check upcoming catalysts", key="btn_calendar"):
             with st.spinner("Checking Finnhub calendar..."):
-                hits = combine_calendar(cal_universe, days_ahead=60)
+                hits = combine_calendar(cal_universe, days_ahead=21)
                 if not hits:
                     hits = calendar_watch(cal_universe, days_ahead=60)
                 st.session_state["calendar_hits"] = hits
