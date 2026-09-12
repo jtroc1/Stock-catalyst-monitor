@@ -1,7 +1,5 @@
 """
 Stock & Catalyst Monitor — full app
-Watchlist, market scan, meme scan, calendar (Finnhub + fallback),
-EDGAR/Finnhub ready, early/late, continuation, 5m charts
 """
 
 import streamlit as st
@@ -207,13 +205,35 @@ def main():
             with st.spinner("Checking Finnhub calendar..."):
                 hits = combine_calendar(cal_universe, days_ahead=21)
                 if not hits:
-                    hits = calendar_watch(cal_universe, days_ahead=60)
+                    hits = calendar_watch(cal_universe, days_ahead=21)
                 st.session_state["calendar_hits"] = hits
         cal_hits = st.session_state.get("calendar_hits")
         if cal_hits:
-            st.dataframe(pd.DataFrame(cal_hits), use_container_width=True)
+            cal_df = pd.DataFrame(cal_hits)
+            st.dataframe(cal_df, use_container_width=True)
+            cal_symbols = []
+            for s in list(cal_df.get("symbol", [])):
+                if s and s not in cal_symbols:
+                    cal_symbols.append(s)
+            picked = st.multiselect(
+                "Pick names from the calendar to score",
+                cal_symbols,
+                key="cal_pick"
+            )
+            if st.button("Score selected names", key="btn_score_picked"):
+                if not picked:
+                    st.warning("Pick at least one name first.")
+                else:
+                    with st.spinner("Scoring selected names..."):
+                        st.session_state["picked_scored"] = score_hits(
+                            [{"symbol": s} for s in picked], benchmark
+                        )
+            picked_scored = st.session_state.get("picked_scored")
+            if picked_scored:
+                st.markdown("### Selected calendar names")
+                st.dataframe(scored_table(picked_scored), use_container_width=True)
         elif cal_hits is not None:
-            st.caption("No upcoming catalysts found in the next 60 days.")
+            st.caption("No upcoming catalysts found in the next 21 days.")
 
         cont = get_continuation_list()
         if cont:
@@ -247,10 +267,6 @@ def main():
         crypto_scored = st.session_state.get("scan_crypto_scored")
         meme_scored = st.session_state.get("meme_scored")
 
-        if not stock_scored and not crypto_scored and not meme_scored:
-            st.info("Tap a scan button after checking the calendar.")
-            return
-
         if stock_scored:
             st.markdown("### Stocks not on your watchlist")
             st.dataframe(scored_table(stock_scored), use_container_width=True)
@@ -260,8 +276,6 @@ def main():
         if meme_scored:
             st.markdown("### Meme / small-cap scan")
             st.dataframe(scored_table(meme_scored), use_container_width=True)
-
-        st.caption("Early + Moderate/Strong = investigate. Late + vertical candle = pass.")
         return
 
     v1, v2, v3 = st.columns([2, 1, 1])
@@ -336,16 +350,6 @@ def main():
                 st.write(f"RSI {r.get('rsi')}  |  RVOL {r.get('rvol')}  |  RS {r.get('relative_strength')}")
                 for reason in r.get("reasons") or []:
                     st.write(f"• {reason}")
-                filings = r.get("filings") or []
-                if filings:
-                    st.markdown("**SEC filings**")
-                    for f in filings[:5]:
-                        st.write(f"{f.get('type')} {f.get('when')} — {f.get('url')}")
-                news = r.get("news") or []
-                if news:
-                    st.markdown("**Finnhub news**")
-                    for n in news[:5]:
-                        st.write(f"{n.get('headline')}")
 
     with st.sidebar:
         st.header("Watchlist")
