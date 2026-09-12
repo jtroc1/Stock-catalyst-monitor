@@ -256,7 +256,7 @@ with c1:
 
     if not rows:
         st.warning("No data returned right now. Try refreshing in a minute.")
-        return
+        st.stop()
 
     if view == "Moderate+ only":
         rows = [r for r in rows if r.get("candidate_rating") in ("Strong", "Moderate")]
