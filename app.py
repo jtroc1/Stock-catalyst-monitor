@@ -171,7 +171,7 @@ def main():
     st.markdown("---")
     page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True, key="page_select")
 
-      if page == "Market Scan":
+    if page == "Market Scan":
         st.subheader("Missed-opportunity scan")
         st.caption("Same scoring as the watchlist: RS, RSI, RVOL, catalyst, penny flags, Candidate / Entry.")
 
