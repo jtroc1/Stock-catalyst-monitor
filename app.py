@@ -1,11 +1,13 @@
 """
 Visual dashboard for Stock & Catalyst Monitor.
-Deployable to Streamlit Community Cloud.
+Includes 5-minute candlestick charts.
 """
 
 import streamlit as st
 import yaml
 import pandas as pd
+import yfinance as yf
+import plotly.graph_objects as go
 from pathlib import Path
 import sys
 from datetime import datetime
@@ -35,13 +37,52 @@ CONFIG_PATH = Path(__file__).parent / "config.yaml"
 def load_config():
     with open(CONFIG_PATH, "r") as f:
         cfg = yaml.safe_load(f)
-    # Prefer Streamlit secrets for webhook if available
     try:
         if "discord" in st.secrets and "webhook_url" in st.secrets["discord"]:
             cfg["discord"]["webhook_url"] = st.secrets["discord"]["webhook_url"]
     except Exception:
         pass
     return cfg
+
+
+@st.cache_data(ttl=60)
+def get_five_min_candles(symbol: str):
+    """Fetch recent 5-minute OHLCV data."""
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="5d", interval="5m")
+        if df is None or df.empty:
+            df = ticker.history(period="1d", interval="5m")
+        if df is None or df.empty:
+            return None
+        return df.tail(120)
+    except Exception:
+        return None
+
+
+def draw_candle_chart(symbol: str, df: pd.DataFrame):
+    fig = go.Figure(
+        data=[
+            go.Candlestick(
+                x=df.index,
+                open=df["Open"],
+                high=df["High"],
+                low=df["Low"],
+                close=df["Close"],
+                name=symbol
+            )
+        ]
+    )
+    fig.update_layout(
+        title=f"{symbol} — 5 minute candles",
+        xaxis_title="Time",
+        yaxis_title="Price",
+        xaxis_rangeslider_visible=False,
+        height=420,
+        margin=dict(l=10, r=10, t=40, b=10),
+        template="plotly_dark"
+    )
+    return fig
 
 
 def fetch_symbol_data(symbol: str, benchmark: str = "QQQ"):
@@ -162,7 +203,7 @@ def main():
     status.empty()
 
     if not rows:
-        st.warning("No data returned right now. Try refreshing in a minute (data source can rate-limit).")
+        st.warning("No data returned right now. Try refreshing in a minute.")
         return
 
     if view == "Moderate+ only":
@@ -200,6 +241,23 @@ def main():
     weak = len([r for r in rows if r.get("candidate_rating") == "Weak"])
     st.caption(f"Strong: {strong}  •  Moderate: {moderate}  •  Weak: {weak}  •  Total shown: {len(rows)}")
 
+    # 5-minute chart picker — works well on iPhone
+    st.markdown("---")
+    st.subheader("5-minute chart")
+    chart_options = df["Symbol"].tolist()
+    selected = st.selectbox("Choose a stock or crypto", chart_options)
+
+    if selected:
+        candle_df = get_five_min_candles(selected)
+        if candle_df is None or candle_df.empty:
+            st.info(f"No 5-minute data available for {selected} right now.")
+        else:
+            last_close = float(candle_df["Close"].iloc[-1])
+            prev_close = float(candle_df["Close"].iloc[-2]) if len(candle_df) > 1 else last_close
+            change = last_close - prev_close
+            st.caption(f"Last 5m close: {last_close:.4f} ({change:+.4f})")
+            st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)
+
     if show_details and rows:
         st.markdown("---")
         st.subheader("Detailed View")
@@ -232,10 +290,6 @@ def main():
                 if cat.get("summary") and cat.get("catalyst_score", 0) >= 1.5:
                     st.info(f"Catalyst: {cat['summary']}")
 
-                mem = r.get("memory", {})
-                if mem.get("note"):
-                    st.caption(f"🧠 {mem['note']}")
-
     with st.sidebar:
         st.header("Watchlist")
         st.write("**Stocks**")
@@ -244,17 +298,7 @@ def main():
         st.write("**Crypto**")
         for c in crypto:
             st.write(f"• {c}")
-
-        st.markdown("---")
-        st.caption("Edit config.yaml in the GitHub repo to change tickers.")
         st.caption(f"Last refresh: {datetime.now().strftime('%H:%M:%S')}")
-
-        active = get_active_catalysts()
-        if active:
-            st.markdown("---")
-            st.subheader("🧠 Active Catalyst Memory")
-            for a in active[:6]:
-                st.caption(f"**{a['symbol']}** ({a.get('quality')}) — {a.get('summary', '')[:50]}")
 
 
 if __name__ == "__main__":
