@@ -1,0 +1,43 @@
+# Stock & Catalyst Monitor Configuration
+# Discord webhook should be set in Streamlit Secrets (or left here for local use)
+
+discord:
+  webhook_url: ""   # Leave empty for Streamlit Cloud – set in Secrets instead
+
+watchlist:
+  stocks:
+    - TSLA
+    - VASO
+    - PYPL
+    - QQQ
+    - DUOL
+    - SEI
+    - QCOM
+    - GLW
+    - BE
+    - ROIV
+    - CHYM
+    - META
+    - SIG
+  crypto:
+    - BTC-USD
+    - ETH-USD
+    - SOL-USD
+    - XRP-USD
+    - DOGE-USD
+    - AVAX-USD
+    - LINK-USD
+    - DOT-USD
+    - ADA-USD
+    - NEAR-USD
+    - INJ-USD
+
+settings:
+  check_interval_minutes: 5
+  market_hours_only_stocks: true
+  relative_strength_benchmark: QQQ
+
+scoring:
+  strong_threshold: 7.0
+  moderate_threshold: 5.0
+  weak_threshold: 3.0
