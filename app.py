@@ -28,7 +28,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 
 @st.cache_data(ttl=120)
