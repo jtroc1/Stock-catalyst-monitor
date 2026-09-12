@@ -22,6 +22,7 @@ from scoring import score_setup
 from catalysts import analyze_catalysts
 from catalyst_memory import get_memory_boost, get_active_catalysts
 from penny_flags import get_penny_flags
+from scanner import run_market_scan, DEFAULT_STOCK_UNIVERSE, scan_meme_smallcaps
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
