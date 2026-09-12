@@ -1,6 +1,6 @@
 """
-Visual dashboard for Stock & Catalyst Monitor.
-Includes 5-minute candlestick charts.
+Stock & Catalyst Monitor
+Watchlist + market scan + 5-minute charts
 """
 
 import streamlit as st
@@ -48,7 +48,6 @@ def load_config():
 
 @st.cache_data(ttl=60)
 def get_five_min_candles(symbol: str):
-    """Fetch recent 5-minute OHLCV data."""
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period="5d", interval="5m")
@@ -94,7 +93,7 @@ def fetch_symbol_data(symbol: str, benchmark: str = "QQQ"):
     hist = get_history(symbol, period="3mo")
     indicators = calculate_indicators(hist) if hist is not None else {}
 
-    rs_benchmark = "BTC-USD" if symbol.endswith("-USD") else benchmark
+    rs_benchmark = "BTC-USD" if str(symbol).endswith("-USD") else benchmark
     rs = get_relative_strength(symbol, benchmark=rs_benchmark)
 
     catalyst = analyze_catalysts(symbol)
@@ -143,7 +142,7 @@ def color_change(val):
         v = float(val)
         if v > 0:
             return "color: #16a34a; font-weight: 600"
-        elif v < 0:
+        if v < 0:
             return "color: #dc2626; font-weight: 600"
     except Exception:
         pass
@@ -161,8 +160,7 @@ def main():
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        market_status = "🟢 Open" if is_market_open() else "🔴 Closed"
-        st.metric("US Market", market_status)
+        st.metric("US Market", "🟢 Open" if is_market_open() else "🔴 Closed")
     with col2:
         st.metric("Stocks", len(stocks))
     with col3:
@@ -171,67 +169,68 @@ def main():
         st.metric("Interval", f"{config['settings'].get('check_interval_minutes', 5)} min")
 
     st.markdown("---")
+    page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True, key="page_select")
 
-    st.markdown("---")
+    if page == "Market Scan":
+        st.subheader("Missed-opportunity scan")
+        st.caption("Names NOT already on your watchlist. Broad scan, not every ticker on earth.")
 
-page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True)
+        b1, b2 = st.columns(2)
+        with b1:
+            run_main = st.button("Run market scan", type="primary", key="btn_market")
+        with b2:
+            run_meme = st.button("Run meme / small-cap scan", key="btn_meme")
 
-if page == "Market Scan":
-    st.subheader("Missed-opportunity scan")
-    st.caption("Shows unusual movers that are NOT already on your watchlist.")
+        if run_main:
+            with st.spinner("Scanning liquid stocks and crypto..."):
+                st.session_state["scan_results"] = run_market_scan(
+                    stock_universe=DEFAULT_STOCK_UNIVERSE,
+                    watchlist_stocks=stocks,
+                    watchlist_crypto=crypto,
+                    stock_top_n=12,
+                    crypto_top_n=12,
+                )
+        if run_meme:
+            with st.spinner("Scanning meme / small-caps..."):
+                st.session_state["meme_results"] = scan_meme_smallcaps(exclude=stocks)
 
-    b1, b2 = st.columns(2)
-    with b1:
-        run_main = st.button("Run market scan", type="primary")
-    with b2:
-        run_meme = st.button("Run meme / small-cap scan")
+        results = st.session_state.get("scan_results")
+        meme_results = st.session_state.get("meme_results")
 
-    if run_main:
-        with st.spinner("Scanning liquid stocks and crypto..."):
-            st.session_state["scan_results"] = run_market_scan(
-                watchlist_stocks=stocks,
-                watchlist_crypto=crypto,
-            )
-    if run_meme:
-        with st.spinner("Scanning meme / small-caps..."):
-            st.session_state["meme_results"] = scan_meme_smallcaps(exclude=stocks)
+        if not results and not meme_results:
+            st.info("Tap a scan button.")
+            return
 
-    results = st.session_state.get("scan_results")
-    meme_results = st.session_state.get("meme_results")
+        if results:
+            stock_df = pd.DataFrame(results.get("stocks") or [])
+            crypto_df = pd.DataFrame(results.get("crypto") or [])
+            st.markdown("### Stocks not on your watchlist")
+            st.dataframe(stock_df, use_container_width=True)
+            st.markdown("### Crypto not on your watchlist")
+            st.dataframe(crypto_df, use_container_width=True)
 
-    if not results and not meme_results:
-        st.info("Tap a scan button.")
-        st.stop()
+        if meme_results:
+            st.markdown("### Meme / small-cap scan")
+            st.caption("Extra scrutiny applied. These are not automatic buys.")
+            st.dataframe(pd.DataFrame(meme_results), use_container_width=True)
 
-    if results:
-        stock_df = pd.DataFrame(results.get("stocks") or [])
-        crypto_df = pd.DataFrame(results.get("crypto") or [])
-        st.markdown("### Stocks not on your watchlist")
-        st.dataframe(stock_df, use_container_width=True)
-        st.markdown("### Crypto not on your watchlist")
-        st.dataframe(crypto_df, use_container_width=True)
-
-    if meme_results:
-        meme_df = pd.DataFrame(meme_results)
-        st.markdown("### Meme / small-cap scan")
-        st.caption("Extra scrutiny applied. These are not automatic buys.")
-        st.dataframe(meme_df, use_container_width=True)
-
-    st.stop()
-
-c1, c2, c3 = st.columns([2, 1, 1])
-with c1:
-    view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True)
+        st.caption("Candidates to investigate only. Apply your full rules before acting.")
+        return
 
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True)
+        view = st.radio(
+            "View",
+            ["All", "Stocks only", "Crypto only", "Moderate+ only"],
+            horizontal=True,
+            key="view_select"
+        )
     with c2:
-        if st.button("🔄 Refresh Data", type="primary", use_container_width=True):
+        if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="btn_refresh"):
             st.cache_data.clear()
             st.rerun()
     with c3:
-        show_details = st.checkbox("Show details", value=False)
+        show_details = st.checkbox("Show details", value=False, key="chk_details")
 
     if view == "Stocks only":
         symbols_to_load = stocks
@@ -243,20 +242,18 @@ with c1:
     rows = []
     progress = st.progress(0)
     status = st.empty()
-
     for i, symbol in enumerate(symbols_to_load):
         status.text(f"Loading {symbol}...")
         progress.progress((i + 1) / max(len(symbols_to_load), 1))
         data = fetch_symbol_data(symbol, benchmark)
         if data:
             rows.append(data)
-
     progress.empty()
     status.empty()
 
     if not rows:
         st.warning("No data returned right now. Try refreshing in a minute.")
-        st.stop()
+        return
 
     if view == "Moderate+ only":
         rows = [r for r in rows if r.get("candidate_rating") in ("Strong", "Moderate")]
@@ -277,8 +274,7 @@ with c1:
             "Penny": r.get("penny", {}).get("risk_level", "Low")
         })
 
-    df = pd.DataFrame(table_data)
-    df = df.sort_values("Score", ascending=False).reset_index(drop=True)
+    df = pd.DataFrame(table_data).sort_values("Score", ascending=False).reset_index(drop=True)
 
     st.subheader("Watchlist Overview")
     styled = (
@@ -293,12 +289,9 @@ with c1:
     weak = len([r for r in rows if r.get("candidate_rating") == "Weak"])
     st.caption(f"Strong: {strong}  •  Moderate: {moderate}  •  Weak: {weak}  •  Total shown: {len(rows)}")
 
-    # 5-minute chart picker — works well on iPhone
     st.markdown("---")
     st.subheader("5-minute chart")
-    chart_options = df["Symbol"].tolist()
-    selected = st.selectbox("Choose a stock or crypto", chart_options)
-
+    selected = st.selectbox("Choose a stock or crypto", df["Symbol"].tolist(), key="chart_select")
     if selected:
         candle_df = get_five_min_candles(selected)
         if candle_df is None or candle_df.empty:
@@ -313,12 +306,9 @@ with c1:
     if show_details and rows:
         st.markdown("---")
         st.subheader("Detailed View")
-        sorted_rows = sorted(rows, key=lambda x: x.get("score", 0), reverse=True)
-
-        for r in sorted_rows:
+        for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
             rating = r.get("candidate_rating", "—")
             color = {"Strong": "🟢", "Moderate": "🟡", "Weak": "🟠", "Reject": "🔴"}.get(rating, "⚪")
-
             with st.expander(f"{color} **{r['symbol']}** — {rating} / {r.get('entry_rating')}  (Score {r.get('score')})"):
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -331,16 +321,11 @@ with c1:
                 with c3:
                     st.write(f"Catalyst: **{r.get('catalyst_score', 0)}** ({r.get('catalyst_quality', 'None')})")
                     st.write(f"Penny risk: **{r.get('penny', {}).get('risk_level', 'Low')}**")
-
                 reasons = r.get("reasons", [])
                 if reasons:
                     st.markdown("**Key reasons:**")
                     for reason in reasons:
                         st.write(f"• {reason}")
-
-                cat = r.get("catalyst", {})
-                if cat.get("summary") and cat.get("catalyst_score", 0) >= 1.5:
-                    st.info(f"Catalyst: {cat['summary']}")
 
     with st.sidebar:
         st.header("Watchlist")
@@ -353,6 +338,4 @@ with c1:
         st.caption(f"Last refresh: {datetime.now().strftime('%H:%M:%S')}")
 
 
-if __name__ == "__main__":
-    main()
-
+main()
