@@ -172,6 +172,57 @@ def main():
 
     st.markdown("---")
 
+    st.markdown("---")
+
+page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True)
+
+if page == "Market Scan":
+    st.subheader("Missed-opportunity scan")
+    st.caption("Shows unusual movers that are NOT already on your watchlist.")
+
+    b1, b2 = st.columns(2)
+    with b1:
+        run_main = st.button("Run market scan", type="primary")
+    with b2:
+        run_meme = st.button("Run meme / small-cap scan")
+
+    if run_main:
+        with st.spinner("Scanning liquid stocks and crypto..."):
+            st.session_state["scan_results"] = run_market_scan(
+                watchlist_stocks=stocks,
+                watchlist_crypto=crypto,
+            )
+    if run_meme:
+        with st.spinner("Scanning meme / small-caps..."):
+            st.session_state["meme_results"] = scan_meme_smallcaps(exclude=stocks)
+
+    results = st.session_state.get("scan_results")
+    meme_results = st.session_state.get("meme_results")
+
+    if not results and not meme_results:
+        st.info("Tap a scan button.")
+        st.stop()
+
+    if results:
+        stock_df = pd.DataFrame(results.get("stocks") or [])
+        crypto_df = pd.DataFrame(results.get("crypto") or [])
+        st.markdown("### Stocks not on your watchlist")
+        st.dataframe(stock_df, use_container_width=True)
+        st.markdown("### Crypto not on your watchlist")
+        st.dataframe(crypto_df, use_container_width=True)
+
+    if meme_results:
+        meme_df = pd.DataFrame(meme_results)
+        st.markdown("### Meme / small-cap scan")
+        st.caption("Extra scrutiny applied. These are not automatic buys.")
+        st.dataframe(meme_df, use_container_width=True)
+
+    st.stop()
+
+c1, c2, c3 = st.columns([2, 1, 1])
+with c1:
+    view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True)
+
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True)
