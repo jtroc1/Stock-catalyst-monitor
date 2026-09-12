@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 from datetime import datetime
 
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent))
 
 from utils.data_fetcher import (
     get_current_price, get_history, calculate_indicators,
