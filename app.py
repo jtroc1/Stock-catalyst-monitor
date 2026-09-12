@@ -193,6 +193,14 @@ def main():
                     continue
                 data["scan_rank"] = hit.get("scan_rank")
                 data["name"] = hit.get("name")
+                data["timing"] = tag_early_or_late(data)
+                if data.get("catalyst_score", 0) >= 4 or data.get("candidate_rating") in ("Strong", "Moderate"):
+                    remember_continuation(
+                        data["symbol"],
+                        (data.get("catalyst") or {}).get("summary", ""),
+                        data.get("catalyst_quality") or data.get("candidate_rating"),
+                        float(data.get("catalyst_score") or data.get("score") or 0),
+                    )
                 scored_rows.append(data)
             return scored_rows
 
@@ -311,7 +319,8 @@ def main():
             "Candidate": r.get("candidate_rating"),
             "Entry": r.get("entry_rating"),
             "Score": r.get("score"),
-            "Penny": r.get("penny", {}).get("risk_level", "Low")
+                    "Timing": r.get("timing"),
+                    "Penny": r.get("penny", {}).get("risk_level", "Low"),
         })
 
     df = pd.DataFrame(table_data).sort_values("Score", ascending=False).reset_index(drop=True)
