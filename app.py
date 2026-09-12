@@ -1,6 +1,7 @@
 """
 Stock & Catalyst Monitor — full app
-Watchlist, market scan, meme scan, calendar, early/late, continuation, 5m charts
+Watchlist, market scan, meme scan, calendar (Finnhub + fallback),
+EDGAR/Finnhub ready, early/late, continuation, 5m charts
 """
 
 import streamlit as st
@@ -27,6 +28,7 @@ from edge_tools import (
     tag_early_or_late, calendar_watch,
     remember_continuation, get_continuation_list
 )
+from alt_sources import combine_calendar, edgar_recent_filings, finnhub_news
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
@@ -107,6 +109,8 @@ def fetch_symbol_data(symbol: str, benchmark: str = "QQQ"):
     out = {**price_data, **indicators, "relative_strength": rs, **scored,
            "catalyst": catalyst, "penny": penny, "memory": mem}
     out["timing"] = tag_early_or_late(out)
+    out["filings"] = edgar_recent_filings(symbol) if not str(symbol).endswith("-USD") else []
+    out["news"] = finnhub_news(symbol) if not str(symbol).endswith("-USD") else []
     return out
 
 
@@ -184,24 +188,27 @@ def main():
     benchmark = config["settings"].get("relative_strength_benchmark", "QQQ")
 
     st.title("📈 Stock & Catalyst Monitor")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("US Market", "🟢 Open" if is_market_open() else "🔴 Closed")
-    c2.metric("Stocks", len(stocks))
-    c3.metric("Crypto", len(crypto))
-    c4.metric("Interval", f"{config['settings'].get('check_interval_minutes', 5)} min")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("US Market", "🟢 Open" if is_market_open() else "🔴 Closed")
+    m2.metric("Stocks", len(stocks))
+    m3.metric("Crypto", len(crypto))
+    m4.metric("Interval", f"{config['settings'].get('check_interval_minutes', 5)} min")
 
     st.markdown("---")
     page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True, key="page_select")
 
     if page == "Market Scan":
         st.subheader("Missed-opportunity scan")
-        st.caption("Same scoring as the watchlist. Broad scan, not every ticker on earth.")
+        st.caption("Same scoring as the watchlist. Calendar uses Finnhub first, Yahoo fallback.")
 
         st.markdown("### Calendar first")
         cal_universe = list(dict.fromkeys(stocks + crypto + DEFAULT_STOCK_UNIVERSE[:25]))
         if st.button("Check upcoming catalysts", key="btn_calendar"):
-            with st.spinner("Checking calendar..."):
-                st.session_state["calendar_hits"] = calendar_watch(cal_universe, days_ahead=60)
+            with st.spinner("Checking Finnhub calendar..."):
+                hits = combine_calendar(cal_universe, days_ahead=60)
+                if not hits:
+                    hits = calendar_watch(cal_universe, days_ahead=60)
+                st.session_state["calendar_hits"] = hits
         cal_hits = st.session_state.get("calendar_hits")
         if cal_hits:
             st.dataframe(pd.DataFrame(cal_hits), use_container_width=True)
@@ -241,7 +248,7 @@ def main():
         meme_scored = st.session_state.get("meme_scored")
 
         if not stock_scored and not crypto_scored and not meme_scored:
-            st.info("Tap a scan button.")
+            st.info("Tap a scan button after checking the calendar.")
             return
 
         if stock_scored:
@@ -329,6 +336,16 @@ def main():
                 st.write(f"RSI {r.get('rsi')}  |  RVOL {r.get('rvol')}  |  RS {r.get('relative_strength')}")
                 for reason in r.get("reasons") or []:
                     st.write(f"• {reason}")
+                filings = r.get("filings") or []
+                if filings:
+                    st.markdown("**SEC filings**")
+                    for f in filings[:5]:
+                        st.write(f"{f.get('type')} {f.get('when')} — {f.get('url')}")
+                news = r.get("news") or []
+                if news:
+                    st.markdown("**Finnhub news**")
+                    for n in news[:5]:
+                        st.write(f"{n.get('headline')}")
 
     with st.sidebar:
         st.header("Watchlist")
