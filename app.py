@@ -12,14 +12,14 @@ from datetime import datetime
 
 sys.path.append(str(Path(__file__).parent))
 
-from utils.data_fetcher import (
+from data_fetcher import (
     get_current_price, get_history, calculate_indicators,
     get_relative_strength, is_market_open
 )
-from utils.scoring import score_setup
-from utils.catalysts import analyze_catalysts
-from utils.catalyst_memory import get_memory_boost, get_active_catalysts
-from utils.penny_flags import get_penny_flags
+from scoring import score_setup
+from catalysts import analyze_catalysts
+from catalyst_memory import get_memory_boost, get_active_catalysts
+from penny_flags import get_penny_flags
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
