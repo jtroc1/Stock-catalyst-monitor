@@ -151,15 +151,41 @@ def edgar_recent_filings(symbol, forms=("8-K", "4"), limit=8):
             break
     return out
 
-
-def combine_calendar(symbols, days_ahead=60):
-    wanted = {s.upper() for s in symbols if not str(s).endswith("-USD")}
+def combine_calendar(symbols, days_ahead=21):
+    wanted = {s.upper() for s in symbols if s and not str(s).endswith("-USD")}
     cal = finnhub_earnings(days_ahead=days_ahead)
-    filtered = [row for row in cal if row["symbol"] in wanted]
-    extra = [row for row in cal if row.get("days_until") is not None and 0 <= row["days_until"] <= 7]
-    seen = {row["symbol"] for row in filtered}
-    for row in extra:
-        if row["symbol"] not in seen:
-            filtered.append(row)
-            seen.add(row["symbol"])
-    return filtered[:40]
+    near = [
+        row for row in cal
+        if row.get("days_until") is not None and 0 <= row["days_until"] <= days_ahead
+    ]
+    near.sort(key=lambda x: x.get("days_until", 99))
+    out = near[:80]
+
+    for sym in list(wanted)[:30]:
+        try:
+            filings = edgar_recent_filings(sym, forms=("8-K", "4"), limit=2)
+        except Exception:
+            filings = []
+        for f in filings:
+            when = f.get("when") or ""
+            days = None
+            try:
+                days = (datetime.utcnow().date() - datetime.strptime(when, "%Y-%m-%d").date()).days
+            except Exception:
+                pass
+            if days is not None and days > 10:
+                continue
+            out.append({
+                "symbol": f.get("symbol"),
+                "source": "SEC EDGAR",
+                "type": f.get("type"),
+                "when": when,
+                "days_until": -days if days is not None else None,
+                "hour": None,
+                "eps_estimate": None,
+                "summary": f.get("summary"),
+                "url": f.get("url"),
+            })
+    return out
+
+
