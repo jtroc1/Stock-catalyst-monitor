@@ -131,3 +131,43 @@ def run_market_scan(stock_universe=None, watchlist_stocks=None, watchlist_crypto
     stock_hits = scan_stocks(universe, exclude=watchlist_stocks, top_n=stock_top_n)
     crypto_hits = scan_crypto(exclude=watchlist_crypto, top_n=crypto_top_n)
     return {"stocks": stock_hits, "crypto": crypto_hits, "all": stock_hits + crypto_hits}
+MEME_SMALLCAP_UNIVERSE = [
+    "GME", "AMC", "BBBYQ", "FFIE", "MULN", "SABS", "GV",
+    "SOUN", "IONQ", "RKLB", "RIVN", "NIO", "LCID",
+    "MARA", "RIOT", "CLSK", "HUT", "BITF",
+    "OPEN", "CVNA", "UPST", "AFRM", "HOOD",
+    "CHYM", "VASO", "SEI", "SIG",
+]
+
+
+def scan_meme_smallcaps(exclude=None, top_n=12):
+    """Riskier scan with extra penny-stock scrutiny."""
+    exclude = set(exclude or [])
+    tickers = [t for t in MEME_SMALLCAP_UNIVERSE if t not in exclude]
+    hits = scan_stocks(tickers, exclude=[], top_n=40)
+
+    filtered = []
+    for row in hits:
+        price = row.get("price") or 0
+        change = abs(row.get("change_pct") or 0)
+        rvol = row.get("rvol")
+
+        flags = []
+        if price < 1:
+            flags.append("Sub-$1")
+        elif price < 5:
+            flags.append("Under $5")
+        elif price < 10:
+            flags.append("Under $10")
+
+        # Extra scrutiny: skip dead names with no volume participation
+        if rvol is not None and rvol < 0.8 and change < 5:
+            continue
+
+        row = dict(row)
+        row["asset"] = "meme_smallcap"
+        row["penny_flags"] = ", ".join(flags) if flags else "Low"
+        filtered.append(row)
+
+    filtered.sort(key=lambda x: x.get("scan_rank", 0), reverse=True)
+    return filtered[:top_n]
