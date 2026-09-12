@@ -176,6 +176,21 @@ def main():
         st.subheader("Missed-opportunity scan")
         st.caption("Same scoring as the watchlist: RS, RSI, RVOL, catalyst, penny flags, Candidate / Entry.")
 
+        st.markdown("### Calendar first")
+        cal_universe = list(dict.fromkeys(stocks + crypto + DEFAULT_STOCK_UNIVERSE[:25]))
+        if st.button("Check upcoming catalysts", key="btn_calendar"):
+            with st.spinner("Checking calendar..."):
+                st.session_state["calendar_hits"] = calendar_watch(cal_universe, days_ahead=10)
+        cal_hits = st.session_state.get("calendar_hits")
+        if cal_hits:
+            st.dataframe(pd.DataFrame(cal_hits), use_container_width=True)
+
+        cont = get_continuation_list()
+        if cont:
+            st.markdown("### 3-day continuation watch")
+            st.caption("Verified catalysts kept alive for delayed / second-session moves.")
+            st.dataframe(pd.DataFrame(cont), use_container_width=True)
+
         b1, b2 = st.columns(2)
         with b1:
             run_main = st.button("Run market scan", type="primary", key="btn_market")
