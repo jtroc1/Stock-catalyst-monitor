@@ -27,6 +27,7 @@ from edge_tools import (
     remember_continuation, get_continuation_list
 )
 from alt_sources import combine_calendar, edgar_recent_filings, finnhub_news
+from quality_alerts import maybe_alert, send_morning_brief
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
@@ -150,6 +151,7 @@ def score_hits(hits, benchmark):
                 data.get("catalyst_quality") or data.get("candidate_rating"),
                 float(data.get("catalyst_score") or data.get("score") or 0),
             )
+        maybe_alert(data)
         scored_rows.append(data)
     return scored_rows
 
@@ -197,7 +199,14 @@ def main():
 
     if page == "Market Scan":
         st.subheader("Missed-opportunity scan")
-        st.caption("Same scoring as the watchlist. Calendar uses Finnhub first, Yahoo fallback.")
+        st.caption("Discord alerts only for Early + Moderate/Strong. Calendar uses Finnhub first.")
+
+        if st.button("Send morning brief", key="btn_brief"):
+            ok = send_morning_brief(stocks)
+            if ok:
+                st.success("Morning brief sent to Discord.")
+            else:
+                st.warning("Brief not sent. Check Discord secrets.")
 
         st.markdown("### Calendar first")
         cal_universe = list(dict.fromkeys(stocks + crypto + DEFAULT_STOCK_UNIVERSE[:25]))
@@ -308,6 +317,7 @@ def main():
         progress.progress((i + 1) / max(len(symbols_to_load), 1))
         data = fetch_symbol_data(symbol, benchmark)
         if data:
+            maybe_alert(data)
             rows.append(data)
     progress.empty()
     status.empty()
