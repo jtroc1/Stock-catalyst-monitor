@@ -171,9 +171,9 @@ def main():
     st.markdown("---")
     page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True, key="page_select")
 
-    if page == "Market Scan":
+      if page == "Market Scan":
         st.subheader("Missed-opportunity scan")
-        st.caption("Names NOT already on your watchlist. Broad scan, not every ticker on earth.")
+        st.caption("Same scoring as the watchlist: RS, RSI, RVOL, catalyst, penny flags, Candidate / Entry.")
 
         b1, b2 = st.columns(2)
         with b1:
@@ -181,40 +181,79 @@ def main():
         with b2:
             run_meme = st.button("Run meme / small-cap scan", key="btn_meme")
 
+        def score_hits(hits):
+            scored_rows = []
+            for hit in hits or []:
+                symbol = hit.get("symbol")
+                if not symbol:
+                    continue
+                data = fetch_symbol_data(symbol, benchmark)
+                if not data:
+                    continue
+                data["scan_rank"] = hit.get("scan_rank")
+                data["name"] = hit.get("name")
+                scored_rows.append(data)
+            return scored_rows
+
+        def hits_table(scored_rows):
+            if not scored_rows:
+                return pd.DataFrame()
+            table = []
+            for r in scored_rows:
+                table.append({
+                    "Symbol": r.get("symbol"),
+                    "Price": r.get("price"),
+                    "Change %": r.get("change_pct"),
+                    "RSI": r.get("rsi", "—"),
+                    "RVOL": r.get("rvol", "—"),
+                    "Rel Str": r.get("relative_strength", "—"),
+                    "Cat": r.get("catalyst_score", 0),
+                    "Candidate": r.get("candidate_rating"),
+                    "Entry": r.get("entry_rating"),
+                    "Score": r.get("score"),
+                    "Penny": r.get("penny", {}).get("risk_level", "Low"),
+                })
+            return pd.DataFrame(table).sort_values("Score", ascending=False)
+
         if run_main:
-            with st.spinner("Scanning liquid stocks and crypto..."):
-                st.session_state["scan_results"] = run_market_scan(
+            with st.spinner("Scanning and scoring liquid names..."):
+                raw = run_market_scan(
                     stock_universe=DEFAULT_STOCK_UNIVERSE,
                     watchlist_stocks=stocks,
                     watchlist_crypto=crypto,
                     stock_top_n=12,
                     crypto_top_n=12,
                 )
+                st.session_state["scan_stock_scored"] = score_hits(raw.get("stocks"))
+                st.session_state["scan_crypto_scored"] = score_hits(raw.get("crypto"))
+
         if run_meme:
-            with st.spinner("Scanning meme / small-caps..."):
-                st.session_state["meme_results"] = scan_meme_smallcaps(exclude=stocks)
+            with st.spinner("Scanning and scoring meme / small-caps..."):
+                raw_meme = scan_meme_smallcaps(exclude=stocks)
+                st.session_state["meme_scored"] = score_hits(raw_meme)
 
-        results = st.session_state.get("scan_results")
-        meme_results = st.session_state.get("meme_results")
+        stock_scored = st.session_state.get("scan_stock_scored")
+        crypto_scored = st.session_state.get("scan_crypto_scored")
+        meme_scored = st.session_state.get("meme_scored")
 
-        if not results and not meme_results:
+        if not stock_scored and not crypto_scored and not meme_scored:
             st.info("Tap a scan button.")
             return
 
-        if results:
-            stock_df = pd.DataFrame(results.get("stocks") or [])
-            crypto_df = pd.DataFrame(results.get("crypto") or [])
+        if stock_scored:
             st.markdown("### Stocks not on your watchlist")
-            st.dataframe(stock_df, use_container_width=True)
+            st.dataframe(hits_table(stock_scored), use_container_width=True)
+
+        if crypto_scored:
             st.markdown("### Crypto not on your watchlist")
-            st.dataframe(crypto_df, use_container_width=True)
+            st.dataframe(hits_table(crypto_scored), use_container_width=True)
 
-        if meme_results:
+        if meme_scored:
             st.markdown("### Meme / small-cap scan")
-            st.caption("Extra scrutiny applied. These are not automatic buys.")
-            st.dataframe(pd.DataFrame(meme_results), use_container_width=True)
+            st.caption("Same rules, plus extra penny-stock scrutiny.")
+            st.dataframe(hits_table(meme_scored), use_container_width=True)
 
-        st.caption("Candidates to investigate only. Apply your full rules before acting.")
+        st.caption("Still a candidate list. Strong + Ready + acceptable risk = trade. Anything less = wait.")
         return
 
     c1, c2, c3 = st.columns([2, 1, 1])
