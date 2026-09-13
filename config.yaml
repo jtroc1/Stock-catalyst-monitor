@@ -1,8 +1,5 @@
-# Stock & Catalyst Monitor Configuration
-# Discord webhook should be set in Streamlit Secrets (or left here for local use)
-
 discord:
-  webhook_url: ""   # Leave empty for Streamlit Cloud – set in Secrets instead
+  webhook_url: ""
 
 watchlist:
   stocks:
@@ -31,21 +28,27 @@ watchlist:
     - ADA-USD
     - NEAR-USD
     - INJ-USD
-commodities:
+  commodities:
+    - GLD
+    - SLV
+    - USO
+    - UNG
+    - CPER
+    - UUP
     - GC=F
     - SI=F
     - CL=F
     - NG=F
     - HG=F
     - ZC=F
-    - GLD
-    - SLV
-    - USO
-    - UUP
+
 settings:
   check_interval_minutes: 5
   market_hours_only_stocks: true
   relative_strength_benchmark: QQQ
+  alert_cooldown_minutes: 45
+  market_scan_stock_top_n: 12
+  market_scan_crypto_top_n: 12
 
 scoring:
   strong_threshold: 7.0
