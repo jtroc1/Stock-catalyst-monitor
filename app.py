@@ -202,58 +202,37 @@ def main():
             ok = send_morning_brief(stocks)
             st.success("Morning brief sent to Discord.") if ok else st.warning("Brief not sent.")
 
-        if st.button("Refresh Today", type="primary", key="btn_today"):
-            with st.spinner("Loading calendar and watchlist..."):
-                st.session_state["today_cal"] = combine_calendar(stocks + crypto, days_ahead=5)
-                st.session_state["today_rows"] = score_hits(
-                    [{"symbol": s} for s in all_symbols], benchmark
-                )
-
-        cal = st.session_state.get("today_cal") or []
         session_dates = []
         d = datetime.now(pytz.timezone("Europe/Oslo")).date()
         while len(session_dates) < 2:
             if d.weekday() < 5:
                 session_dates.append(d.isoformat())
             d = d + timedelta(days=1)
-        today_earn = [r for r in cal if str(r.get("when")) in session_dates]
-        st.markdown("### Earnings / filings — next 2 sessions")
-        st.caption("Showing " + ", ".join(session_dates))
-        if today_earn:
-            st.dataframe(pd.DataFrame(today_earn), use_container_width=True)
-            today_symbols = []
-            for s in [r.get("symbol") for r in today_earn]:
-                if s and s not in today_symbols:
-                    today_symbols.append(s)
-            picked_today = st.multiselect(
-                "Pick names to run through the scoring rules",
-                today_symbols,
-                key="today_pick"
-            )
-            if st.button("Score selected names", key="btn_score_today"):
-                if not picked_today:
-                    st.warning("Pick at least one name first.")
-                else:
-                    with st.spinner("Scoring selected names..."):
-                        st.session_state["picked_scored"] = score_hits(
-                            [{"symbol": s} for s in picked_today], benchmark
-                        )
-            picked_scored = st.session_state.get("picked_scored")
-            if picked_scored:
-                st.markdown("### Assessment")
-                st.dataframe(scored_table(picked_scored), use_container_width=True)
-                add_pick = st.multiselect(
-                    "Add scored names to watchlist",
-                    [r.get("symbol") for r in picked_scored],
-                    key="add_pick_today"
+
+        if st.button("Refresh Today", type="primary", key="btn_today"):
+            with st.spinner("Loading calendar and scoring every name..."):
+                cal = combine_calendar(stocks + crypto, days_ahead=5)
+                st.session_state["today_cal"] = cal
+                session_hits = [r for r in cal if str(r.get("when")) in session_dates]
+                session_syms = []
+                for r in session_hits:
+                    s = r.get("symbol")
+                    if s and s not in session_syms:
+                        session_syms.append(s)
+                st.session_state["session_scored"] = score_hits(
+                    [{"symbol": s} for s in session_syms[:20]], benchmark
                 )
-                if st.button("Add to watchlist", key="btn_add_wl_today"):
-                    if add_pick:
-                        add_symbols(add_pick)
-                        st.success("Added: " + ", ".join(add_pick))
-                        st.rerun()
+                st.session_state["today_rows"] = score_hits(
+                    [{"symbol": s} for s in all_symbols], benchmark
+                )
+
+        st.markdown("### Next 2 sessions — scored")
+        st.caption("Showing " + ", ".join(session_dates) + ". All names are run through the same rules automatically.")
+        session_scored = st.session_state.get("session_scored")
+        if session_scored:
+            st.dataframe(scored_table(session_scored), use_container_width=True)
         else:
-            st.caption("Nothing in the next 2 sessions yet. Tap Refresh Today.")
+            st.caption("Tap Refresh Today. This scores the next 2 sessions automatically.")
 
         rows = st.session_state.get("today_rows") or []
         early = [r for r in rows if r.get("timing") == "Early"]
