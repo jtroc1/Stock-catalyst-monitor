@@ -377,4 +377,4 @@ def main():
             st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)
 
     if show_details:
-        for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True
+        for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
