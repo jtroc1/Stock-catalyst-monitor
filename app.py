@@ -26,6 +26,7 @@ from edge_tools import (
 from alt_sources import combine_calendar, edgar_recent_filings, finnhub_news
 from quality_alerts import maybe_alert, send_morning_brief
 from watchlist_store import add_symbols, merge_watchlist
+from journal import load_journal, add_entry
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
@@ -188,11 +189,11 @@ def color_change(val):
 
 def main():
     config = load_config()
-    stocks, crypto = merge_watchlist(
+    stocks, crypto, commodities = merge_watchlist(
         config["watchlist"].get("stocks", []),
         config["watchlist"].get("crypto", []),
+        config["watchlist"].get("commodities", []),
     )
-    commodities = config["watchlist"].get("commodities", [])
     all_symbols = stocks + crypto + commodities
     benchmark = config["settings"].get("relative_strength_benchmark", "QQQ")
     today = datetime.now(pytz.timezone("Europe/Oslo")).date().isoformat()
@@ -445,10 +446,41 @@ def main():
         for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
             rating = r.get("candidate_rating", "—")
             mark = {"Strong": "🟢", "Moderate": "🟡", "Weak": "🟠", "Reject": "🔴"}.get(rating, "⚪")
-            with st.expander(f"{mark} **{r['symbol']}** — {rating} / {r.get('entry_rating')} ({r.get('score')}) {r.get('timing')}"):
-                st.write(f"Price {r.get('price')}  |  Change {r.get('change_pct', 0):+.2f}%")
+            with st.expander(str(mark) + " " + str(r.get("symbol")) + " " + str(rating)):
+                st.write("Price " + str(r.get("price")))
                 for reason in r.get("reasons") or []:
-                    st.write(f"• {reason}")
+                    st.write("- " + str(reason))
+                if st.button("Load filings/news", key="det_" + str(r.get("symbol"))):
+                    filings = edgar_recent_filings(r.get("symbol"))
+                    news = finnhub_news(r.get("symbol"))
+                    if filings:
+                        st.write("SEC filings")
+                        for f in filings[:4]:
+                            st.write(str(f.get("type")) + " " + str(f.get("when")))
+                    if news:
+                        st.write("News")
+                        for n in news[:4]:
+                            st.write(str(n.get("headline")))
+
+    st.markdown("---")
+    st.subheader("Trade journal")
+    j1, j2 = st.columns(2)
+    with j1:
+        j_sym = st.text_input("Symbol", key="j_sym")
+        j_prob = st.selectbox(
+            "What broke / what worked",
+            ["discovery", "thesis", "timing", "execution", "risk", "variance"],
+            key="j_prob"
+        )
+    with j2:
+        j_note = st.text_area("Note", key="j_note")
+        if st.button("Save journal entry", key="j_save"):
+            if j_sym:
+                add_entry(j_sym, j_prob, j_note)
+                st.success("Saved " + j_sym)
+    past = load_journal()[:8]
+    if past:
+        st.dataframe(past, use_container_width=True)
 
     with st.sidebar:
         st.header("Watchlist")
