@@ -221,6 +221,37 @@ def main():
         st.caption("Showing " + ", ".join(session_dates))
         if today_earn:
             st.dataframe(pd.DataFrame(today_earn), use_container_width=True)
+            today_symbols = []
+            for s in [r.get("symbol") for r in today_earn]:
+                if s and s not in today_symbols:
+                    today_symbols.append(s)
+            picked_today = st.multiselect(
+                "Pick names to run through the scoring rules",
+                today_symbols,
+                key="today_pick"
+            )
+            if st.button("Score selected names", key="btn_score_today"):
+                if not picked_today:
+                    st.warning("Pick at least one name first.")
+                else:
+                    with st.spinner("Scoring selected names..."):
+                        st.session_state["picked_scored"] = score_hits(
+                            [{"symbol": s} for s in picked_today], benchmark
+                        )
+            picked_scored = st.session_state.get("picked_scored")
+            if picked_scored:
+                st.markdown("### Assessment")
+                st.dataframe(scored_table(picked_scored), use_container_width=True)
+                add_pick = st.multiselect(
+                    "Add scored names to watchlist",
+                    [r.get("symbol") for r in picked_scored],
+                    key="add_pick_today"
+                )
+                if st.button("Add to watchlist", key="btn_add_wl_today"):
+                    if add_pick:
+                        add_symbols(add_pick)
+                        st.success("Added: " + ", ".join(add_pick))
+                        st.rerun()
         else:
             st.caption("Nothing in the next 2 sessions yet. Tap Refresh Today.")
 
