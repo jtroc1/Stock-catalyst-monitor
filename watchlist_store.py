@@ -1,19 +1,45 @@
 import json
 from pathlib import Path
 
+import yaml
+
 STORE = Path(__file__).parent / "extra_watchlist.json"
+CONFIG = Path(__file__).parent / "config.yaml"
+COMMODITY_ETFS = {"GLD", "SLV", "USO", "UNG", "CPER", "DBA", "GDX", "PALL", "PPLT", "UUP"}
+
+
+def _bucket(sym):
+    s = str(sym).upper().strip()
+    if s.endswith("-USD") or s.endswith("-USDT"):
+        return "crypto"
+    if s.endswith("=F") or s in COMMODITY_ETFS:
+        return "commodities"
+    return "stocks"
 
 
 def load_extra():
+    extra = {"stocks": [], "crypto": [], "commodities": []}
     try:
         if STORE.exists():
             data = json.loads(STORE.read_text())
-            stocks = [s.upper() for s in data.get("stocks", []) if s]
-            crypto = [s for s in data.get("crypto", []) if s]
-            return {"stocks": stocks, "crypto": crypto}
+            extra["stocks"] = [s.upper() for s in data.get("stocks", []) if s]
+            extra["crypto"] = [s for s in data.get("crypto", []) if s]
+            extra["commodities"] = [s for s in data.get("commodities", []) if s]
     except Exception:
         pass
-    return {"stocks": [], "crypto": []}
+    return extra
+
+
+def _write_config(extra):
+    try:
+        cfg = yaml.safe_load(CONFIG.read_text()) or {}
+        wl = cfg.setdefault("watchlist", {})
+        for key in ("stocks", "crypto", "commodities"):
+            current = [str(x) for x in (wl.get(key) or [])]
+            wl[key] = list(dict.fromkeys(current + extra.get(key, [])))
+        CONFIG.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    except Exception:
+        pass
 
 
 def add_symbols(symbols):
@@ -22,21 +48,20 @@ def add_symbols(symbols):
         if not raw:
             continue
         sym = str(raw).upper().strip()
-        if sym.endswith("-USD") or sym.endswith("-USDT"):
-            if sym not in extra["crypto"]:
-                extra["crypto"].append(sym)
-        else:
-            if sym not in extra["stocks"]:
-                extra["stocks"].append(sym)
+        bucket = _bucket(sym)
+        if sym not in extra[bucket]:
+            extra[bucket].append(sym)
     try:
         STORE.write_text(json.dumps(extra, indent=2))
     except Exception:
         pass
+    _write_config(extra)
     return extra
 
 
-def merge_watchlist(config_stocks, config_crypto):
+def merge_watchlist(config_stocks, config_crypto, config_commodities=None):
     extra = load_extra()
     stocks = list(dict.fromkeys(list(config_stocks or []) + extra["stocks"]))
     crypto = list(dict.fromkeys(list(config_crypto or []) + extra["crypto"]))
-    return stocks, crypto
+    commodities = list(dict.fromkeys(list(config_commodities or []) + extra["commodities"]))
+    return stocks, crypto, commodities
