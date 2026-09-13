@@ -374,7 +374,11 @@ def main():
             last_close = float(candle_df["Close"].iloc[-1])
             prev_close = float(candle_df["Close"].iloc[-2]) if len(candle_df) > 1 else last_close
             st.caption(f"Last 5m close: {last_close:.4f} ({last_close-prev_close:+.4f})")
-            st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)
-
-    if show_details:
+            st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)    if show_details:
         for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
+            rating = r.get("candidate_rating", "—")
+            mark = {"Strong": "🟢", "Moderate": "🟡", "Weak": "🟠", "Reject": "🔴"}.get(rating, "⚪")
+            with st.expander(f"{mark} **{r['symbol']}** — {rating} / {r.get('entry_rating')} ({r.get('score')}) {r.get('timing')}"):
+                st.write(f"Price {r.get('price')}  |  Change {r.get('change_pct', 0):+.2f}%")
+                for reason in r.get("reasons") or []:
+                    st.write(f"• {reason}")
