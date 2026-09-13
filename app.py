@@ -5,7 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 sys.path.append(str(Path(__file__).parent))
@@ -204,18 +204,25 @@ def main():
 
         if st.button("Refresh Today", type="primary", key="btn_today"):
             with st.spinner("Loading calendar and watchlist..."):
-                st.session_state["today_cal"] = combine_calendar(stocks + crypto, days_ahead=2)
+                st.session_state["today_cal"] = combine_calendar(stocks + crypto, days_ahead=5)
                 st.session_state["today_rows"] = score_hits(
                     [{"symbol": s} for s in all_symbols], benchmark
                 )
 
         cal = st.session_state.get("today_cal") or []
-        today_earn = [r for r in cal if str(r.get("when")) == today]
-        st.markdown("### Earnings / filings dated today")
+        session_dates = []
+        d = datetime.now(pytz.timezone("Europe/Oslo")).date()
+        while len(session_dates) < 2:
+            if d.weekday() < 5:
+                session_dates.append(d.isoformat())
+            d = d + timedelta(days=1)
+        today_earn = [r for r in cal if str(r.get("when")) in session_dates]
+        st.markdown("### Earnings / filings — next 2 sessions")
+        st.caption("Showing " + ", ".join(session_dates))
         if today_earn:
             st.dataframe(pd.DataFrame(today_earn), use_container_width=True)
         else:
-            st.caption("No Finnhub/EDGAR items dated today yet. Tap Refresh Today.")
+            st.caption("Nothing in the next 2 sessions yet. Tap Refresh Today.")
 
         rows = st.session_state.get("today_rows") or []
         early = [r for r in rows if r.get("timing") == "Early"]
@@ -373,25 +380,24 @@ def main():
         else:
             last_close = float(candle_df["Close"].iloc[-1])
             prev_close = float(candle_df["Close"].iloc[-2]) if len(candle_df) > 1 else last_close
-            change = last_close - prev_close
-            st.caption("Last 5m close: " + str(round(last_close, 4)) + " (" + str(round(change, 4)) + ")")
+            st.caption(f"Last 5m close: {last_close:.4f} ({last_close-prev_close:+.4f})")
             st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)
 
     if show_details:
         for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
             rating = r.get("candidate_rating", "—")
             mark = {"Strong": "🟢", "Moderate": "🟡", "Weak": "🟠", "Reject": "🔴"}.get(rating, "⚪")
-            with st.expander(str(mark) + " " + str(r.get("symbol")) + " " + str(rating)):
-                st.write("Price " + str(r.get("price")))
+            with st.expander(f"{mark} **{r['symbol']}** — {rating} / {r.get('entry_rating')} ({r.get('score')}) {r.get('timing')}"):
+                st.write(f"Price {r.get('price')}  |  Change {r.get('change_pct', 0):+.2f}%")
                 for reason in r.get("reasons") or []:
-                    st.write("- " + str(reason))
+                    st.write(f"• {reason}")
 
     with st.sidebar:
         st.header("Watchlist")
         for s in stocks:
-            st.write("- " + str(s))
+            st.write(f"• {s}")
         for c in crypto:
-            st.write("- " + str(c))
+            st.write(f"• {c}")
 
 
 main()
