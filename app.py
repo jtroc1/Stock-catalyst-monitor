@@ -1,7 +1,3 @@
-"""
-Stock & Catalyst Monitor — full app
-"""
-
 import streamlit as st
 import yaml
 import pandas as pd
@@ -10,6 +6,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 import sys
 from datetime import datetime
+import pytz
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -28,6 +25,7 @@ from edge_tools import (
 )
 from alt_sources import combine_calendar, edgar_recent_filings, finnhub_news
 from quality_alerts import maybe_alert, send_morning_brief
+from watchlist_store import add_symbols, merge_watchlist
 
 st.set_page_config(
     page_title="Stock & Catalyst Monitor",
@@ -66,12 +64,10 @@ def get_five_min_candles(symbol: str):
 
 
 def draw_candle_chart(symbol: str, df: pd.DataFrame):
-    fig = go.Figure(
-        data=[go.Candlestick(
-            x=df.index, open=df["Open"], high=df["High"],
-            low=df["Low"], close=df["Close"], name=symbol
-        )]
-    )
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index, open=df["Open"], high=df["High"],
+        low=df["Low"], close=df["Close"], name=symbol
+    )])
     fig.update_layout(
         title=f"{symbol} — 5 minute candles",
         xaxis_rangeslider_visible=False,
@@ -108,8 +104,6 @@ def fetch_symbol_data(symbol: str, benchmark: str = "QQQ"):
     out = {**price_data, **indicators, "relative_strength": rs, **scored,
            "catalyst": catalyst, "penny": penny, "memory": mem}
     out["timing"] = tag_early_or_late(out)
-    out["filings"] = edgar_recent_filings(symbol) if not str(symbol).endswith("-USD") else []
-    out["news"] = finnhub_news(symbol) if not str(symbol).endswith("-USD") else []
     return out
 
 
@@ -182,31 +176,70 @@ def color_change(val):
 
 def main():
     config = load_config()
-    stocks = config["watchlist"].get("stocks", [])
-    crypto = config["watchlist"].get("crypto", [])
+    stocks, crypto = merge_watchlist(
+        config["watchlist"].get("stocks", []),
+        config["watchlist"].get("crypto", []),
+    )
     all_symbols = stocks + crypto
     benchmark = config["settings"].get("relative_strength_benchmark", "QQQ")
+    today = datetime.now(pytz.timezone("Europe/Oslo")).date().isoformat()
 
     st.title("📈 Stock & Catalyst Monitor")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("US Market", "🟢 Open" if is_market_open() else "🔴 Closed")
     m2.metric("Stocks", len(stocks))
     m3.metric("Crypto", len(crypto))
-    m4.metric("Interval", f"{config['settings'].get('check_interval_minutes', 5)} min")
+    m4.metric("Today", today)
 
     st.markdown("---")
-    page = st.radio("Page", ["Watchlist", "Market Scan"], horizontal=True, key="page_select")
+    page = st.radio("Page", ["Today", "Watchlist", "Market Scan"], horizontal=True, key="page_select")
+
+    if page == "Today":
+        st.subheader("Today")
+        st.caption("Earnings today, Early watchlist names, and 3-day continuation. This is the 07:30 page.")
+
+        if st.button("Send morning brief", key="btn_brief_today"):
+            ok = send_morning_brief(stocks)
+            st.success("Morning brief sent to Discord.") if ok else st.warning("Brief not sent.")
+
+        if st.button("Refresh Today", type="primary", key="btn_today"):
+            with st.spinner("Loading calendar and watchlist..."):
+                st.session_state["today_cal"] = combine_calendar(stocks + crypto, days_ahead=2)
+                st.session_state["today_rows"] = score_hits(
+                    [{"symbol": s} for s in all_symbols], benchmark
+                )
+
+        cal = st.session_state.get("today_cal") or []
+        today_earn = [r for r in cal if str(r.get("when")) == today]
+        st.markdown("### Earnings / filings dated today")
+        if today_earn:
+            st.dataframe(pd.DataFrame(today_earn), use_container_width=True)
+        else:
+            st.caption("No Finnhub/EDGAR items dated today yet. Tap Refresh Today.")
+
+        rows = st.session_state.get("today_rows") or []
+        early = [r for r in rows if r.get("timing") == "Early"]
+        st.markdown("### Early names on your watchlist")
+        if early:
+            st.dataframe(scored_table(early), use_container_width=True)
+        elif rows:
+            st.caption("Watchlist loaded. No Early tags right now.")
+        else:
+            st.caption("Tap Refresh Today to score the watchlist.")
+
+        cont = get_continuation_list()
+        st.markdown("### 3-day continuation")
+        if cont:
+            st.dataframe(pd.DataFrame(cont), use_container_width=True)
+        else:
+            st.caption("No live continuation names.")
+        return
 
     if page == "Market Scan":
         st.subheader("Missed-opportunity scan")
-        st.caption("Discord alerts only for Early + Moderate/Strong. Calendar uses Finnhub first.")
-
         if st.button("Send morning brief", key="btn_brief"):
             ok = send_morning_brief(stocks)
-            if ok:
-                st.success("Morning brief sent to Discord.")
-            else:
-                st.warning("Brief not sent. Check Discord secrets.")
+            st.success("Morning brief sent to Discord.") if ok else st.warning("Brief not sent.")
 
         st.markdown("### Calendar first")
         cal_universe = list(dict.fromkeys(stocks + crypto + DEFAULT_STOCK_UNIVERSE[:25]))
@@ -224,11 +257,7 @@ def main():
             for s in list(cal_df.get("symbol", [])):
                 if s and s not in cal_symbols:
                     cal_symbols.append(s)
-            picked = st.multiselect(
-                "Pick names from the calendar to score",
-                cal_symbols,
-                key="cal_pick"
-            )
+            picked = st.multiselect("Pick names from the calendar to score", cal_symbols, key="cal_pick")
             if st.button("Score selected names", key="btn_score_picked"):
                 if not picked:
                     st.warning("Pick at least one name first.")
@@ -241,6 +270,16 @@ def main():
             if picked_scored:
                 st.markdown("### Selected calendar names")
                 st.dataframe(scored_table(picked_scored), use_container_width=True)
+                add_pick = st.multiselect(
+                    "Add scored names to watchlist",
+                    [r.get("symbol") for r in picked_scored],
+                    key="add_pick"
+                )
+                if st.button("Add to watchlist", key="btn_add_wl"):
+                    if add_pick:
+                        add_symbols(add_pick)
+                        st.success(f"Added: {', '.join(add_pick)}. Reopen Today/Watchlist to see them.")
+                        st.rerun()
         elif cal_hits is not None:
             st.caption("No upcoming catalysts found in the next 21 days.")
 
@@ -254,7 +293,6 @@ def main():
             run_main = st.button("Run market scan", type="primary", key="btn_market")
         with b2:
             run_meme = st.button("Run meme / small-cap scan", key="btn_meme")
-
         if run_main:
             with st.spinner("Scanning and scoring liquid names..."):
                 raw = run_market_scan(
@@ -271,30 +309,20 @@ def main():
                 st.session_state["meme_scored"] = score_hits(
                     scan_meme_smallcaps(exclude=stocks), benchmark
                 )
-
-        stock_scored = st.session_state.get("scan_stock_scored")
-        crypto_scored = st.session_state.get("scan_crypto_scored")
-        meme_scored = st.session_state.get("meme_scored")
-
-        if stock_scored:
+        if st.session_state.get("scan_stock_scored"):
             st.markdown("### Stocks not on your watchlist")
-            st.dataframe(scored_table(stock_scored), use_container_width=True)
-        if crypto_scored:
+            st.dataframe(scored_table(st.session_state["scan_stock_scored"]), use_container_width=True)
+        if st.session_state.get("scan_crypto_scored"):
             st.markdown("### Crypto not on your watchlist")
-            st.dataframe(scored_table(crypto_scored), use_container_width=True)
-        if meme_scored:
+            st.dataframe(scored_table(st.session_state["scan_crypto_scored"]), use_container_width=True)
+        if st.session_state.get("meme_scored"):
             st.markdown("### Meme / small-cap scan")
-            st.dataframe(scored_table(meme_scored), use_container_width=True)
+            st.dataframe(scored_table(st.session_state["meme_scored"]), use_container_width=True)
         return
 
     v1, v2, v3 = st.columns([2, 1, 1])
     with v1:
-        view = st.radio(
-            "View",
-            ["All", "Stocks only", "Crypto only", "Moderate+ only"],
-            horizontal=True,
-            key="view_select"
-        )
+        view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True, key="view_select")
     with v2:
         if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="btn_refresh"):
             st.cache_data.clear()
@@ -323,9 +351,8 @@ def main():
     status.empty()
 
     if not rows:
-        st.warning("No data returned right now. Try refreshing in a minute.")
+        st.warning("No data returned right now.")
         return
-
     if view == "Moderate+ only":
         rows = [r for r in rows if r.get("candidate_rating") in ("Strong", "Moderate")]
 
@@ -350,23 +377,4 @@ def main():
             st.plotly_chart(draw_candle_chart(selected, candle_df), use_container_width=True)
 
     if show_details:
-        st.markdown("---")
-        st.subheader("Detailed View")
-        for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True):
-            rating = r.get("candidate_rating", "—")
-            mark = {"Strong": "🟢", "Moderate": "🟡", "Weak": "🟠", "Reject": "🔴"}.get(rating, "⚪")
-            with st.expander(f"{mark} **{r['symbol']}** — {rating} / {r.get('entry_rating')} ({r.get('score')}) {r.get('timing')}"):
-                st.write(f"Price {r.get('price')}  |  Change {r.get('change_pct', 0):+.2f}%")
-                st.write(f"RSI {r.get('rsi')}  |  RVOL {r.get('rvol')}  |  RS {r.get('relative_strength')}")
-                for reason in r.get("reasons") or []:
-                    st.write(f"• {reason}")
-
-    with st.sidebar:
-        st.header("Watchlist")
-        for s in stocks:
-            st.write(f"• {s}")
-        for c in crypto:
-            st.write(f"• {c}")
-
-
-main()
+        for r in sorted(rows, key=lambda x: x.get("score", 0), reverse=True
