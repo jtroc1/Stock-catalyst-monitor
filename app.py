@@ -389,16 +389,48 @@ def main():
     if view == "Moderate+ only":
         rows = [r for r in rows if r.get("candidate_rating") in ("Strong", "Moderate")]
 
-    df = scored_table(rows)
-    st.subheader("Watchlist Overview")
-    styled = df.style.map(color_candidate, subset=["Candidate"]).map(color_change, subset=["Change %"])
-    if "Timing" in df.columns:
-        styled = styled.map(color_candidate, subset=["Timing"])
-    st.dataframe(styled, use_container_width=True, height=420)
+    stock_set = set(stocks)
+    crypto_set = set(crypto)
+    comm_set = set(commodities)
 
+    def bucket(row):
+        sym = str(row.get("symbol") or "")
+        if sym in crypto_set or sym.endswith("-USD"):
+            return "crypto"
+        if sym in comm_set or sym.endswith("=F") or sym in COMMODITY_ETFS:
+            return "commodities"
+        return "stocks"
+
+    stock_rows = [r for r in rows if bucket(r) == "stocks"]
+    crypto_rows = [r for r in rows if bucket(r) == "crypto"]
+    comm_rows = [r for r in rows if bucket(r) == "commodities"]
+
+    def show_group(title, group_rows):
+        st.subheader(title)
+        if not group_rows:
+            st.caption("No names in this group right now.")
+            return
+        gdf = scored_table(group_rows)
+        styled = gdf.style.map(color_candidate, subset=["Candidate"]).map(color_change, subset=["Change %"])
+        if "Timing" in gdf.columns:
+            styled = styled.map(color_candidate, subset=["Timing"])
+        st.dataframe(styled, use_container_width=True, height=min(360, 80 + 28 * max(len(group_rows), 3)))
+
+    if view == "Stocks only":
+        show_group("Stocks", stock_rows)
+    elif view == "Crypto only":
+        show_group("Crypto", crypto_rows)
+    elif view == "Commodities only":
+        show_group("Commodities", comm_rows)
+    else:
+        show_group("Stocks", stock_rows)
+        show_group("Crypto", crypto_rows)
+        show_group("Commodities", comm_rows)
+
+    chart_syms = [r.get("symbol") for r in (stock_rows + crypto_rows + comm_rows) if r.get("symbol")]
     st.markdown("---")
     st.subheader("5-minute chart")
-    selected = st.selectbox("Choose a stock or crypto", df["Symbol"].tolist(), key="chart_select")
+    selected = st.selectbox("Choose a name", chart_syms, key="chart_select") if chart_syms else None
     if selected:
         candle_df = get_five_min_candles(selected)
         if candle_df is None or candle_df.empty:
