@@ -189,11 +189,22 @@ def color_change(val):
 
 def main():
     config = load_config()
-    stocks, crypto, commodities = merge_watchlist(
-        config["watchlist"].get("stocks", []),
-        config["watchlist"].get("crypto", []),
-        config["watchlist"].get("commodities", []),
-    )
+    try:
+        merged = merge_watchlist(
+            config["watchlist"].get("stocks", []),
+            config["watchlist"].get("crypto", []),
+            config["watchlist"].get("commodities", []),
+        )
+    except TypeError:
+        merged = merge_watchlist(
+            config["watchlist"].get("stocks", []),
+            config["watchlist"].get("crypto", []),
+        )
+    if isinstance(merged, (list, tuple)) and len(merged) == 3:
+        stocks, crypto, commodities = merged
+    else:
+        stocks, crypto = merged[0], merged[1]
+        commodities = config["watchlist"].get("commodities", []) or []
     all_symbols = stocks + crypto + commodities
     benchmark = config["settings"].get("relative_strength_benchmark", "QQQ")
     today = datetime.now(pytz.timezone("Europe/Oslo")).date().isoformat()
