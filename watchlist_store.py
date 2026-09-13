@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-
 import yaml
 
 STORE = Path(__file__).parent / "extra_watchlist.json"
@@ -30,18 +29,6 @@ def load_extra():
     return extra
 
 
-def _write_config(extra):
-    try:
-        cfg = yaml.safe_load(CONFIG.read_text()) or {}
-        wl = cfg.setdefault("watchlist", {})
-        for key in ("stocks", "crypto", "commodities"):
-            current = [str(x) for x in (wl.get(key) or [])]
-            wl[key] = list(dict.fromkeys(current + extra.get(key, [])))
-        CONFIG.write_text(yaml.safe_dump(cfg, sort_keys=False))
-    except Exception:
-        pass
-
-
 def add_symbols(symbols):
     extra = load_extra()
     for raw in symbols or []:
@@ -55,7 +42,6 @@ def add_symbols(symbols):
         STORE.write_text(json.dumps(extra, indent=2))
     except Exception:
         pass
-    _write_config(extra)
     return extra
 
 
