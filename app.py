@@ -78,13 +78,25 @@ def draw_candle_chart(symbol: str, df: pd.DataFrame):
     return fig
 
 
+COMMODITY_ETFS = {"GLD", "SLV", "USO", "UNG", "CPER", "DBA", "GDX", "PALL", "PPLT", "UUP"}
+
+
+def rs_benchmark_for(symbol: str, default_benchmark: str = "QQQ") -> str:
+    s = str(symbol).upper()
+    if s.endswith("-USD") or s.endswith("-USDT"):
+        return "BTC-USD"
+    if s.endswith("=F") or s in COMMODITY_ETFS:
+        return "UUP"
+    return default_benchmark
+
+
 def fetch_symbol_data(symbol: str, benchmark: str = "QQQ"):
     price_data = get_current_price(symbol)
     if not price_data:
         return None
     hist = get_history(symbol, period="3mo")
     indicators = calculate_indicators(hist) if hist is not None else {}
-    rs_benchmark = "BTC-USD" if str(symbol).endswith("-USD") else benchmark
+    rs_benchmark = rs_benchmark_for(symbol, benchmark)
     rs = get_relative_strength(symbol, benchmark=rs_benchmark)
     catalyst = analyze_catalysts(symbol)
     catalyst_score = catalyst.get("catalyst_score", 0.0)
@@ -180,16 +192,18 @@ def main():
         config["watchlist"].get("stocks", []),
         config["watchlist"].get("crypto", []),
     )
-    all_symbols = stocks + crypto
+    commodities = config["watchlist"].get("commodities", [])
+    all_symbols = stocks + crypto + commodities
     benchmark = config["settings"].get("relative_strength_benchmark", "QQQ")
     today = datetime.now(pytz.timezone("Europe/Oslo")).date().isoformat()
 
     st.title("📈 Stock & Catalyst Monitor")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("US Market", "🟢 Open" if is_market_open() else "🔴 Closed")
     m2.metric("Stocks", len(stocks))
     m3.metric("Crypto", len(crypto))
-    m4.metric("Today", today)
+    m4.metric("Commods", len(commodities))
+    m5.metric("Today", today)
 
     st.markdown("---")
     page = st.radio("Page", ["Today", "Watchlist", "Market Scan"], horizontal=True, key="page_select")
@@ -339,7 +353,7 @@ def main():
 
     v1, v2, v3 = st.columns([2, 1, 1])
     with v1:
-        view = st.radio("View", ["All", "Stocks only", "Crypto only", "Moderate+ only"], horizontal=True, key="view_select")
+        view = st.radio("View", ["All", "Stocks only", "Crypto only", "Commodities only", "Moderate+ only"], horizontal=True, key="view_select")
     with v2:
         if st.button("🔄 Refresh Data", type="primary", use_container_width=True, key="btn_refresh"):
             st.cache_data.clear()
@@ -351,6 +365,8 @@ def main():
         symbols_to_load = stocks
     elif view == "Crypto only":
         symbols_to_load = crypto
+    elif view == "Commodities only":
+        symbols_to_load = commodities
     else:
         symbols_to_load = all_symbols
 
@@ -404,10 +420,15 @@ def main():
 
     with st.sidebar:
         st.header("Watchlist")
+        st.write("**Stocks**")
         for s in stocks:
-            st.write(f"• {s}")
+            st.write("- " + str(s))
+        st.write("**Crypto**")
         for c in crypto:
-            st.write(f"• {c}")
+            st.write("- " + str(c))
+        st.write("**Commodities**")
+        for x in commodities:
+            st.write("- " + str(x))
 
 
 main()
