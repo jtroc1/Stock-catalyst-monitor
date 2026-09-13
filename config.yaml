@@ -31,7 +31,17 @@ watchlist:
     - ADA-USD
     - NEAR-USD
     - INJ-USD
-
+commodities:
+    - GC=F
+    - SI=F
+    - CL=F
+    - NG=F
+    - HG=F
+    - ZC=F
+    - GLD
+    - SLV
+    - USO
+    - UUP
 settings:
   check_interval_minutes: 5
   market_hours_only_stocks: true
